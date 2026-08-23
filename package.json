@@ -1,0 +1,20 @@
+{
+  "name": "starlink-monitor",
+  "version": "1.0.0",
+  "description": "Menu bar monitor for a Starlink line. Scheduled checks, honest alerts, local only.",
+  "license": "MIT",
+  "author": "James Spalding",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "server": "bun run src/server.ts",
+    "probe": "bun run src/probe.ts",
+    "status": "./install.sh status"
+  },
+  "devDependencies": {
+    "@types/bun": "latest"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  }
+}

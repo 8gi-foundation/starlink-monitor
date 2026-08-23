@@ -1,0 +1,39 @@
+# dependencies
+node_modules
+
+# build output
+out
+dist
+*.tgz
+*.tsbuildinfo
+
+# The compiled menu bar binary, the iconset, and any assembled bundle.
+# AppIcon.icns IS tracked on purpose: make-icon.py needs Pillow, and a clean
+# checkout has to build without it. build-app.sh only regenerates the icon when
+# the .icns is missing, so tracking it is what keeps the clean build working.
+menubar/StarlinkBar
+menubar/icon.iconset/
+*.app
+
+# Measurements and logs. These are one machine's readings, never the repo's.
+*.db
+*.db-wal
+*.db-shm
+*.log
+*.err
+
+# code coverage
+coverage
+*.lcov
+
+# environment
+.env
+.env.local
+.env.*.local
+
+# caches and editors
+.cache
+.eslintcache
+.idea
+.vscode
+.DS_Store

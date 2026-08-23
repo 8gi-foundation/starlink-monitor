@@ -1,0 +1,274 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Starlink Monitor</title>
+<style>
+  /* Deliberately single-theme: this is an instrument panel, not a document.
+     Every colour is painted explicitly so it never borrows a host background. */
+  :root {
+    --ground:#0a1113; --surface:#111a1d; --surface-2:#172326; --line:#243539;
+    --ink:#e7efef; --ink-2:#9cb0b4; --ink-3:#6b8086;
+    --ok:#2fd4c1; --ok-soft:#0f2a29;
+    --warn:#e3a844; --warn-soft:#2a2113;
+    --crit:#e8764e; --crit-soft:#2c1810;
+    --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, monospace;
+    --body: "Avenir Next", system-ui, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin:0; background: var(--ground); color: var(--ink);
+    font-family: var(--body); line-height:1.55; -webkit-font-smoothing:antialiased;
+  }
+  .wrap { max-width: 64rem; margin:0 auto; padding: 1.5rem 1rem 4rem;
+          display:flex; flex-direction:column; gap:1rem; }
+
+  header { display:flex; align-items:baseline; justify-content:space-between; gap:1rem; flex-wrap:wrap; }
+  h1 { font-family:var(--mono); font-size:1.15rem; font-weight:600; letter-spacing:-0.02em; margin:0; }
+  .state { display:inline-flex; align-items:center; gap:.5rem; font-family:var(--mono);
+           font-size:.7rem; letter-spacing:.12em; text-transform:uppercase;
+           padding:.3rem .6rem; border-radius:2px; border:1px solid; }
+  .state.ok   { color:var(--ok);   background:var(--ok-soft);   border-color:var(--ok); }
+  .state.warn { color:var(--warn); background:var(--warn-soft); border-color:var(--warn); }
+  .state.critical { color:var(--crit); background:var(--crit-soft); border-color:var(--crit); }
+  .state.info { color:var(--ink-2); background:var(--surface-2); border-color:var(--line); }
+
+  .card { background:var(--surface); border:1px solid var(--line); border-radius:3px; padding:1.1rem 1.2rem; }
+  .card h2 { margin:0 0 .8rem; font-size:.7rem; font-family:var(--mono); letter-spacing:.13em;
+             text-transform:uppercase; color:var(--ink-3); font-weight:500; }
+
+  .grid { display:grid; gap:1rem; grid-template-columns:repeat(auto-fit,minmax(9rem,1fr)); }
+  .stat .v { font-family:var(--mono); font-size:1.9rem; font-weight:600; letter-spacing:-.04em;
+             line-height:1; color:var(--ok); font-variant-numeric:tabular-nums; }
+  .stat .v.dim { color:var(--ink); }
+  .stat .v.bad { color:var(--warn); }
+  .stat .u { font-size:.85rem; color:var(--ink-3); font-weight:400; }
+  .stat .l { font-family:var(--mono); font-size:.62rem; letter-spacing:.12em;
+             text-transform:uppercase; color:var(--ink-3); margin-top:.35rem; }
+
+  .alert { display:flex; gap:.8rem; padding:.75rem .9rem; border-radius:2px;
+           background:var(--surface-2); border-left:3px solid var(--warn); margin-bottom:.5rem; }
+  .alert.critical { border-left-color:var(--crit); }
+  .alert.info { border-left-color:var(--ink-3); }
+  .alert .body { flex:1; min-width:0; }
+  .alert .msg { font-weight:600; font-size:.92rem; }
+  .alert .fix { color:var(--ink-2); font-size:.84rem; margin-top:.2rem; }
+  .alert button { align-self:flex-start; }
+
+  button { font-family:var(--mono); font-size:.7rem; letter-spacing:.08em; text-transform:uppercase;
+           background:var(--surface-2); color:var(--ink-2); border:1px solid var(--line);
+           border-radius:2px; padding:.4rem .7rem; cursor:pointer; }
+  button:hover { color:var(--ink); border-color:var(--ink-3); }
+  button:focus-visible { outline:2px solid var(--ok); outline-offset:2px; }
+  button.primary { color:var(--ok); border-color:var(--ok); }
+  button[disabled] { opacity:.5; cursor:default; }
+
+  canvas { width:100%; height:auto; display:block; }
+  .muted { color:var(--ink-3); font-size:.85rem; }
+  .row { display:flex; gap:.5rem; align-items:center; flex-wrap:wrap; }
+  .legend { display:flex; gap:1rem; font-family:var(--mono); font-size:.66rem; color:var(--ink-3); }
+  .legend i { display:inline-block; width:.7rem; height:.15rem; vertical-align:middle; margin-right:.3rem; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <h1>Starlink Monitor</h1>
+    <div class="row">
+      <span id="state" class="state info">loading</span>
+      <button id="btn-test" class="primary">Run speed test</button>
+    </div>
+  </header>
+
+  <section class="card">
+    <h2>Now</h2>
+    <div class="grid" id="stats"></div>
+    <p class="muted" id="freshness" style="margin-top:.9rem"></p>
+  </section>
+
+  <section class="card" id="alerts-card" hidden>
+    <h2>Needs attention</h2>
+    <div id="alerts"></div>
+  </section>
+
+  <section class="card">
+    <h2>Line capacity, dish to PoP</h2>
+    <div class="legend">
+      <span><i style="background:var(--ok)"></i>download</span>
+      <span><i style="background:var(--warn)"></i>upload</span>
+    </div>
+    <canvas id="chart-line" width="1200" height="300"></canvas>
+    <p class="muted" id="line-empty" hidden>No speed tests recorded yet. The hourly probe fills this in.</p>
+  </section>
+
+  <section class="card">
+    <h2>Latency to PoP</h2>
+    <canvas id="chart-ping" width="1200" height="200"></canvas>
+  </section>
+
+  <section class="card">
+    <h2>Best hours, last 7 days</h2>
+    <canvas id="chart-hours" width="1200" height="240"></canvas>
+    <p class="muted" id="hours-empty" hidden>Needs a few days of hourly probes before this means anything.</p>
+  </section>
+
+</div>
+
+<script>
+const $ = (s) => document.querySelector(s)
+const fmt = (v, d = 0) => (v == null ? "--" : Number(v).toFixed(d))
+
+function ago(ts) {
+  if (!ts) return "never"
+  const s = (Date.now() - new Date(ts).getTime()) / 1000
+  if (s < 90) return Math.round(s) + "s ago"
+  if (s < 5400) return Math.round(s / 60) + "m ago"
+  return Math.round(s / 3600) + "h ago"
+}
+
+async function loadStatus() {
+  const d = await (await fetch("/api/status")).json()
+
+  const st = $("#state")
+  st.className = "state " + (d.state === "ok" ? "ok" : d.state)
+  st.textContent = d.state === "ok" ? "all clear" : d.state
+
+  const cls = (v, good, warn) => (v == null ? "dim" : v >= good ? "" : v >= warn ? "dim" : "bad")
+  $("#stats").innerHTML = [
+    ["lineDownMbps", "download", d.lineDownMbps, "Mbps", cls(d.lineDownMbps, 200, 100)],
+    ["lineUpMbps", "upload", d.lineUpMbps, "Mbps", cls(d.lineUpMbps, 12, 8)],
+    ["popPingMs", "pop latency", d.popPingMs, "ms", d.popPingMs == null ? "dim" : d.popPingMs < 50 ? "" : "bad"],
+    ["wifiSnr", "wi-fi snr", d.wifiSnr, "dB", d.wifiSnr == null ? "dim" : d.wifiSnr >= 30 ? "" : "bad"],
+    ["loadedMs", "latency loaded", d.loadedMs, "ms", d.loadedMs == null ? "dim" : d.loadedMs < 250 ? "" : "bad"],
+  ].map(([k, label, v, unit, c]) =>
+    `<div class="stat"><div class="v ${c}">${fmt(v, 0)}<span class="u"> ${unit}</span></div>
+     <div class="l">${label}</div></div>`
+  ).join("")
+
+  $("#freshness").textContent =
+    `probed ${ago(d.ts)} · line tested ${ago(d.lineTestedAt)}` +
+    (d.vpnActive ? ` · VPN active: ${d.vpnName ?? "unknown"}` : "") +
+    (d.dishReachable ? "" : " · dish unreachable")
+
+  const box = $("#alerts")
+  $("#alerts-card").hidden = d.alerts.length === 0
+  box.innerHTML = d.alerts.map((a) => `
+    <div class="alert ${a.severity}">
+      <div class="body">
+        <div class="msg">${a.message}</div>
+        ${a.fix ? `<div class="fix">${a.fix}</div>` : ""}
+      </div>
+      <button data-code="${a.code}">Dismiss</button>
+    </div>`).join("")
+  box.querySelectorAll("button").forEach((b) =>
+    b.onclick = async () => {
+      await fetch("/api/dismiss", { method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ code: b.dataset.code }) })
+      loadStatus()
+    })
+}
+
+// ---- charts. Canvas rather than SVG: these redraw on a timer. -------------
+function axes(ctx, w, h, pad) {
+  ctx.strokeStyle = "#243539"; ctx.lineWidth = 1
+  ctx.beginPath(); ctx.moveTo(pad, h - pad); ctx.lineTo(w - 4, h - pad); ctx.stroke()
+}
+
+function drawSeries(canvas, series, opts = {}) {
+  const ctx = canvas.getContext("2d")
+  const w = canvas.width, h = canvas.height, pad = 42
+  ctx.clearRect(0, 0, w, h)
+  const all = series.flatMap((s) => s.points.map((p) => p.v)).filter((v) => v != null)
+  if (!all.length) return false
+  const max = opts.max ?? Math.max(...all) * 1.15
+  const times = series.flatMap((s) => s.points.map((p) => p.t))
+  const t0 = Math.min(...times), t1 = Math.max(...times)
+  const span = Math.max(1, t1 - t0)
+
+  // horizontal grid + labels
+  ctx.font = "10px ui-monospace, Menlo, monospace"
+  ctx.fillStyle = "#6b8086"; ctx.textAlign = "right"
+  for (let i = 0; i <= 4; i++) {
+    const y = h - pad - (i / 4) * (h - pad * 1.4)
+    ctx.strokeStyle = "#1a282c"; ctx.beginPath(); ctx.moveTo(pad, y); ctx.lineTo(w - 4, y); ctx.stroke()
+    ctx.fillText(Math.round((max * i) / 4), pad - 6, y + 3)
+  }
+  axes(ctx, w, h, pad)
+
+  for (const s of series) {
+    const pts = s.points.filter((p) => p.v != null)
+    if (!pts.length) continue
+    ctx.strokeStyle = s.color; ctx.lineWidth = 2; ctx.beginPath()
+    pts.forEach((p, i) => {
+      const x = pad + ((p.t - t0) / span) * (w - pad - 8)
+      const y = h - pad - (Math.min(p.v, max) / max) * (h - pad * 1.4)
+      i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)
+    })
+    ctx.stroke()
+    ctx.fillStyle = s.color
+    pts.forEach((p) => {
+      const x = pad + ((p.t - t0) / span) * (w - pad - 8)
+      const y = h - pad - (Math.min(p.v, max) / max) * (h - pad * 1.4)
+      ctx.beginPath(); ctx.arc(x, y, 2.5, 0, 7); ctx.fill()
+    })
+  }
+  // time labels
+  ctx.fillStyle = "#6b8086"; ctx.textAlign = "center"
+  for (let i = 0; i <= 3; i++) {
+    const t = t0 + (span * i) / 3
+    const x = pad + (i / 3) * (w - pad - 8)
+    ctx.fillText(new Date(t).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }), x, h - pad + 16)
+  }
+  return true
+}
+
+async function loadCharts() {
+  const rows = await (await fetch("/api/history?hours=48")).json()
+  const T = (r) => new Date(r.ts).getTime()
+
+  const speed = rows.filter((r) => r.st_down_median != null)
+  const okLine = drawSeries($("#chart-line"), [
+    { color: "#2fd4c1", points: speed.map((r) => ({ t: T(r), v: r.st_down_median })) },
+    { color: "#e3a844", points: speed.map((r) => ({ t: T(r), v: r.st_up_median })) },
+  ])
+  $("#line-empty").hidden = okLine
+
+  drawSeries($("#chart-ping"), [
+    { color: "#2fd4c1", points: rows.filter((r) => r.pop_ping_ms != null).map((r) => ({ t: T(r), v: r.pop_ping_ms })) },
+  ])
+
+  const hours = await (await fetch("/api/byhour?days=7")).json()
+  const c = $("#chart-hours"), ctx = c.getContext("2d")
+  ctx.clearRect(0, 0, c.width, c.height)
+  $("#hours-empty").hidden = hours.length > 0
+  if (hours.length) {
+    const max = Math.max(...hours.map((h) => h.avg_down || 0)) * 1.15 || 1
+    const bw = (c.width - 50) / 24
+    ctx.font = "10px ui-monospace, Menlo, monospace"
+    for (const h of hours) {
+      const x = 42 + h.hour * bw
+      const bh = ((h.avg_down || 0) / max) * (c.height - 55)
+      ctx.fillStyle = (h.avg_down || 0) > max * 0.6 ? "#2fd4c1" : "#1d6c65"
+      ctx.fillRect(x + 2, c.height - 32 - bh, bw - 5, bh)
+    }
+    ctx.fillStyle = "#6b8086"; ctx.textAlign = "center"
+    for (let i = 0; i < 24; i += 3) ctx.fillText(String(i).padStart(2, "0"), 42 + i * bw + bw / 2, c.height - 16)
+  }
+}
+
+$("#btn-test").onclick = async (e) => {
+  const b = e.target
+  b.disabled = true; b.textContent = "Testing, 40s"
+  try { await fetch("/api/speedtest", { method: "POST" }) } catch {}
+  b.disabled = false; b.textContent = "Run speed test"
+  loadStatus(); loadCharts()
+}
+
+loadStatus(); loadCharts()
+setInterval(loadStatus, 15000)
+setInterval(loadCharts, 120000)
+</script>
+</body>
+</html>
