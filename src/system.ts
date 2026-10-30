@@ -4,7 +4,7 @@
  *
  * The VPN check exists because it was the single largest measured degradation
  * on this machine: 11.1 Mbps through a NordLynx tunnel versus 26-76 Mbps
- * direct, with latency to 1.1.1.1 going from 162 ms to 54 ms once it was off.
+ * direct, with latency to the public resolver going from 162 ms to 54 ms once it was off.
  * That is worth surfacing every single time it happens.
  */
 
@@ -107,7 +107,7 @@ export async function getLatency(): Promise<LatencyInfo> {
   }
   const [r, i] = await Promise.all([
     sh(["ping", "-c", "3", "-t", "3", "192.168.1.1"]),
-    sh(["ping", "-c", "5", "-t", "6", "1.1.1.1"]),
+    sh(["ping", "-c", "5", "-t", "6", "one.one.one.one"]),
   ])
   const pr = parse(r)
   const pi = parse(i)
